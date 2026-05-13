@@ -43,6 +43,25 @@ public sealed class InMemoryOmsRepository : IOmsRepository
     public IReadOnlyList<AuditLog> AuditLogs => _auditLogs;
     public IReadOnlyList<AiInsight> AiInsights => _aiInsights;
 
+    public AppUser AddUser(AppUser user)
+    {
+        lock (_sync)
+        {
+            _users.Add(user);
+        }
+
+        return user;
+    }
+
+    public bool RemoveUser(Guid userId)
+    {
+        lock (_sync)
+        {
+            var user = _users.FirstOrDefault(item => item.Id == userId);
+            return user is not null && _users.Remove(user);
+        }
+    }
+
     public Customer AddCustomer(Customer customer)
     {
         lock (_sync)

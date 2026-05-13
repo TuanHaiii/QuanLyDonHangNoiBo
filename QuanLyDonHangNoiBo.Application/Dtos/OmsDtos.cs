@@ -126,12 +126,42 @@ public sealed record MetadataDto(
     IReadOnlyList<LookupDto> Warehouses,
     IReadOnlyList<LookupDto> Skus,
     IReadOnlyList<LookupDto> Drivers,
+    IReadOnlyList<string> UserRoles,
     IReadOnlyList<string> OrderStatuses,
     IReadOnlyList<string> ShipmentStatuses);
 
 public sealed record LoginRequest(string TenantCode, string Email, string Password, string Locale);
 
 public sealed record LoginResponse(string AccessToken, TenantDto Tenant, UserDto User, IReadOnlyList<string> Permissions);
+
+public sealed class UserQuery
+{
+    public Guid? TenantId { get; set; }
+    public string? Search { get; set; }
+    public UserRole? Role { get; set; }
+    public bool? IsActive { get; set; }
+}
+
+public sealed class CreateUserRequest
+{
+    public Guid? TenantId { get; set; }
+    public string FullName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public UserRole Role { get; set; } = UserRole.Sales;
+    public Guid? WarehouseId { get; set; }
+    public string Locale { get; set; } = "vi";
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class UpdateUserRequest
+{
+    public string FullName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public UserRole Role { get; set; } = UserRole.Sales;
+    public Guid? WarehouseId { get; set; }
+    public string Locale { get; set; } = "vi";
+    public bool IsActive { get; set; } = true;
+}
 
 public sealed class CreateCustomerRequest
 {

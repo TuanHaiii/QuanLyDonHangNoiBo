@@ -134,6 +134,7 @@ const state = {
   user: null,
   metadata: null,
   selectedOrderId: null,
+  editingUserId: null,
   orderFilters: { search: '', status: '', warehouseId: '' },
   inventoryFilters: { search: '', warehouseId: '' },
   chat: []
@@ -775,7 +776,7 @@ async function askAi(event) {
 async function renderSettings() {
   const [tenants, users, notifications] = await Promise.all([api('/api/tenants'), api('/api/users'), api('/api/notifications')]);
   app.innerHTML = `
-    <div class="grid grid-3">
+    <div class="grid grid-2">
       <section class="panel">
         <header class="panel-header"><h2>Tenant</h2></header>
         <div class="panel-body stack">
@@ -789,15 +790,49 @@ async function renderSettings() {
         </div>
       </section>
       <section class="panel">
+        <header class="panel-header">
+          <h2>User CRUD</h2>
+          <button id="resetUserForm" class="button button-secondary button-small">New</button>
+        </header>
+        <div class="panel-body">${renderUserForm()}</div>
+      </section>
+    </div>
+    <div class="grid grid-2" style="margin-top:16px">
+      <section class="panel">
         <header class="panel-header"><h2>Users</h2></header>
-        <div class="panel-body stack">
-          ${users.map((user) => `
-            <article class="mini-order">
-              <strong>${escapeHtml(user.fullName)}</strong>
-              <span class="muted">${escapeHtml(user.email)}</span>
-              <span class="badge info">${escapeHtml(user.role)}</span>
-            </article>
-          `).join('')}
+        <div class="panel-body">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Warehouse</th>
+                  <th>Status</th>
+                  <th>${t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${users.map((user) => `
+                  <tr>
+                    <td>${escapeHtml(user.fullName)}</td>
+                    <td>${escapeHtml(user.email)}</td>
+                    <td><span class="badge info">${escapeHtml(user.role)}</span></td>
+                    <td>${escapeHtml(warehouseName(user.warehouseId))}</td>
+                    <td>${user.isActive ? '<span class="badge success">Active</span>' : '<span class="badge danger">Inactive</span>'}</td>
+                    <td>
+                      <div class="actions">
+                        <button class="button button-secondary button-small" data-edit-user="${user.id}">Edit</button>
+                        <button class="button button-secondary button-small" data-toggle-user="${user.id}" data-active="${user.isActive ? 'false' : 'true'}">${user.isActive ? 'Deactivate' : 'Activate'}</button>
+                        <button class="button button-danger button-small" data-delete-user="${user.id}">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
       <section class="panel">
@@ -813,6 +848,136 @@ async function renderSettings() {
       </section>
     </div>
   `;
+  bindSettingsEvents();
+}
+
+function renderUserForm() {
+  return `
+    <form id="userForm" class="stack">
+      <input id="userId" type="hidden" value="${escapeAttr(state.editingUserId || '')}">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label">Full name</label>
+          <input id="userFullName" class="input" required minlength="2" placeholder="Nguyen Van A">
+        </div>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input id="userEmail" class="input" type="email" required placeholder="user@demo.vn">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label">Role</label>
+          <select id="userRole" class="select">
+            ${state.metadata.userRoles.map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">Warehouse scope</label>
+          <select id="userWarehouse" class="select">
+            <option value="">No warehouse scope</option>
+            ${state.metadata.warehouses.map((warehouse) => `<option value="${warehouse.id}">${escapeHtml(warehouse.code)} - ${escapeHtml(warehouse.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label">Locale</label>
+          <select id="userLocale" class="select">
+            <option value="vi">vi</option>
+            <option value="en">en</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">Status</label>
+          <select id="userIsActive" class="select">
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <button class="button button-primary" type="submit">${t('common.save')}</button>
+    </form>
+  `;
+}
+
+function bindSettingsEvents() {
+  document.getElementById('userForm').addEventListener('submit', saveUser);
+  document.getElementById('resetUserForm').addEventListener('click', resetUserForm);
+
+  document.querySelectorAll('[data-edit-user]').forEach((button) => {
+    button.addEventListener('click', () => editUser(button.dataset.editUser));
+  });
+
+  document.querySelectorAll('[data-toggle-user]').forEach((button) => {
+    button.addEventListener('click', () => setUserActive(button.dataset.toggleUser, button.dataset.active === 'true'));
+  });
+
+  document.querySelectorAll('[data-delete-user]').forEach((button) => {
+    button.addEventListener('click', () => deleteUser(button.dataset.deleteUser));
+  });
+}
+
+async function editUser(userId) {
+  const user = await api(`/api/users/${userId}`);
+  state.editingUserId = user.id;
+  document.getElementById('userId').value = user.id;
+  document.getElementById('userFullName').value = user.fullName;
+  document.getElementById('userEmail').value = user.email;
+  document.getElementById('userRole').value = user.role;
+  document.getElementById('userWarehouse').value = user.warehouseId || '';
+  document.getElementById('userLocale').value = user.locale || 'vi';
+  document.getElementById('userIsActive').value = String(user.isActive);
+}
+
+async function saveUser(event) {
+  event.preventDefault();
+  const userId = document.getElementById('userId').value;
+  const body = {
+    fullName: document.getElementById('userFullName').value.trim(),
+    email: document.getElementById('userEmail').value.trim(),
+    role: document.getElementById('userRole').value,
+    warehouseId: document.getElementById('userWarehouse').value || null,
+    locale: document.getElementById('userLocale').value,
+    isActive: document.getElementById('userIsActive').value === 'true'
+  };
+
+  if (userId) {
+    await api(`/api/users/${userId}`, { method: 'PUT', body });
+    showToast('User updated');
+  } else {
+    await api('/api/users', { method: 'POST', body });
+    showToast('User created');
+  }
+
+  state.editingUserId = null;
+  await loadMetadata();
+  await renderSettings();
+}
+
+async function setUserActive(userId, isActive) {
+  await api(`/api/users/${userId}/${isActive ? 'activate' : 'deactivate'}`, {
+    method: 'POST',
+    body: { userId: state.user.id }
+  });
+  showToast(isActive ? 'User activated' : 'User deactivated');
+  await loadMetadata();
+  await renderSettings();
+}
+
+async function deleteUser(userId) {
+  const confirmed = window.confirm('Delete this user?');
+  if (!confirmed) return;
+  await api(`/api/users/${userId}?deletedByUserId=${state.user.id}`, { method: 'DELETE' });
+  showToast('User deleted');
+  await loadMetadata();
+  await renderSettings();
+}
+
+function resetUserForm() {
+  state.editingUserId = null;
+  document.getElementById('userForm').reset();
+  document.getElementById('userId').value = '';
 }
 
 function renderMiniOrder(order) {
@@ -823,6 +988,12 @@ function renderMiniOrder(order) {
       <span class="muted">${formatMoney(order.total)} - ${statusText(order.status)}</span>
     </article>
   `;
+}
+
+function warehouseName(warehouseId) {
+  if (!warehouseId) return '-';
+  const warehouse = state.metadata.warehouses.find((item) => item.id === warehouseId);
+  return warehouse ? `${warehouse.code} - ${warehouse.name}` : '-';
 }
 
 function renderOrderActions(order) {

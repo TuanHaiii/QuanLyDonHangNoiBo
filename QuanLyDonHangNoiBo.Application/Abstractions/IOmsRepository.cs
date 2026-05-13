@@ -20,6 +20,8 @@ public interface IOmsRepository
     IReadOnlyList<AuditLog> AuditLogs { get; }
     IReadOnlyList<AiInsight> AiInsights { get; }
 
+    AppUser AddUser(AppUser user);
+    bool RemoveUser(Guid userId);
     Customer AddCustomer(Customer customer);
     Order AddOrder(Order order);
     Shipment AddShipment(Shipment shipment);

@@ -44,15 +44,142 @@ public sealed class OmsApplicationService
         return _repository.Tenants.Select(ToTenantDto).ToList();
     }
 
-    public IReadOnlyList<UserDto> GetUsers(Guid? tenantId)
+    public IReadOnlyList<UserDto> GetUsers(UserQuery query)
     {
-        var resolvedTenantId = ResolveTenantId(tenantId);
-        return _repository.Users
-            .Where(item => item.TenantId == resolvedTenantId)
-            .OrderBy(item => item.Role)
+        var resolvedTenantId = ResolveTenantId(query.TenantId);
+        var users = _repository.Users.Where(item => item.TenantId == resolvedTenantId);
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            users = users.Where(item =>
+                Contains(item.FullName, query.Search) ||
+                Contains(item.Email, query.Search) ||
+                Contains(item.Role.ToString(), query.Search));
+        }
+
+        if (query.Role.HasValue)
+        {
+            users = users.Where(item => item.Role == query.Role.Value);
+        }
+
+        if (query.IsActive.HasValue)
+        {
+            users = users.Where(item => item.IsActive == query.IsActive.Value);
+        }
+
+        return users
+            .OrderByDescending(item => item.IsActive)
+            .ThenBy(item => item.Role)
             .ThenBy(item => item.FullName)
             .Select(ToUserDto)
             .ToList();
+    }
+
+    public UserDto GetUser(Guid userId)
+    {
+        return ToUserDto(FindUser(userId));
+    }
+
+    public UserDto CreateUser(CreateUserRequest request)
+    {
+        var tenantId = ResolveTenantId(request.TenantId);
+        ValidateUserInput(tenantId, request.FullName, request.Email, request.Role, request.WarehouseId, null);
+
+        var user = new AppUser
+        {
+            TenantId = tenantId,
+            FullName = request.FullName.Trim(),
+            Email = request.Email.Trim().ToLowerInvariant(),
+            Role = request.Role,
+            WarehouseId = request.WarehouseId,
+            Locale = NormalizeLocale(request.Locale),
+            IsActive = request.IsActive
+        };
+
+        _repository.AddUser(user);
+        _repository.AddAuditLog(new AuditLog
+        {
+            TenantId = tenantId,
+            EntityName = nameof(AppUser),
+            EntityId = user.Id.ToString(),
+            Action = "CreateUser",
+            AfterValue = $"{user.Email}|{user.Role}"
+        });
+
+        return ToUserDto(user);
+    }
+
+    public UserDto UpdateUser(Guid userId, UpdateUserRequest request)
+    {
+        var user = FindUser(userId);
+        ValidateUserInput(user.TenantId, request.FullName, request.Email, request.Role, request.WarehouseId, user.Id);
+        EnsureTenantAdminRemains(user, request.Role, request.IsActive);
+
+        var before = $"{user.FullName}|{user.Email}|{user.Role}|{user.IsActive}";
+        user.FullName = request.FullName.Trim();
+        user.Email = request.Email.Trim().ToLowerInvariant();
+        user.Role = request.Role;
+        user.WarehouseId = request.WarehouseId;
+        user.Locale = NormalizeLocale(request.Locale);
+        user.IsActive = request.IsActive;
+
+        _repository.AddAuditLog(new AuditLog
+        {
+            TenantId = user.TenantId,
+            EntityName = nameof(AppUser),
+            EntityId = user.Id.ToString(),
+            Action = "UpdateUser",
+            BeforeValue = before,
+            AfterValue = $"{user.FullName}|{user.Email}|{user.Role}|{user.IsActive}"
+        });
+
+        return ToUserDto(user);
+    }
+
+    public UserDto SetUserActive(Guid userId, bool isActive, Guid? changedByUserId)
+    {
+        var user = FindUser(userId);
+        EnsureTenantAdminRemains(user, user.Role, isActive);
+        var before = user.IsActive.ToString();
+        user.IsActive = isActive;
+
+        _repository.AddAuditLog(new AuditLog
+        {
+            TenantId = user.TenantId,
+            UserId = changedByUserId,
+            EntityName = nameof(AppUser),
+            EntityId = user.Id.ToString(),
+            Action = isActive ? "ActivateUser" : "DeactivateUser",
+            BeforeValue = before,
+            AfterValue = user.IsActive.ToString()
+        });
+
+        return ToUserDto(user);
+    }
+
+    public void DeleteUser(Guid userId, Guid? deletedByUserId)
+    {
+        var user = FindUser(userId);
+        EnsureTenantAdminRemains(user, UserRole.Sales, false);
+        if (deletedByUserId == user.Id)
+        {
+            throw new InvalidOperationException("Khong the xoa chinh user dang thao tac.");
+        }
+
+        if (!_repository.RemoveUser(user.Id))
+        {
+            throw new KeyNotFoundException("User khong ton tai.");
+        }
+
+        _repository.AddAuditLog(new AuditLog
+        {
+            TenantId = user.TenantId,
+            UserId = deletedByUserId,
+            EntityName = nameof(AppUser),
+            EntityId = user.Id.ToString(),
+            Action = "DeleteUser",
+            BeforeValue = $"{user.Email}|{user.Role}|{user.IsActive}"
+        });
     }
 
     public IReadOnlyList<CustomerDto> GetCustomers(Guid? tenantId, string? search)
@@ -505,6 +632,7 @@ public sealed class OmsApplicationService
             _repository.Warehouses.Where(item => item.TenantId == resolvedTenantId).Select(item => new LookupDto(item.Id, item.Code, item.Name)).OrderBy(item => item.Code).ToList(),
             skus,
             drivers,
+            Enum.GetNames<UserRole>(),
             Enum.GetNames<OrderStatus>(),
             Enum.GetNames<ShipmentStatus>());
     }
@@ -806,6 +934,80 @@ public sealed class OmsApplicationService
         var tenant = _repository.Tenants.FirstOrDefault(item => item.Status is TenantStatus.Active or TenantStatus.Trial)
             ?? throw new InvalidOperationException("Chua co tenant kha dung.");
         return tenant.Id;
+    }
+
+    private AppUser FindUser(Guid userId)
+    {
+        return _repository.Users.FirstOrDefault(item => item.Id == userId)
+            ?? throw new KeyNotFoundException("User khong ton tai.");
+    }
+
+    private void ValidateUserInput(Guid tenantId, string fullName, string email, UserRole role, Guid? warehouseId, Guid? currentUserId)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            throw new InvalidOperationException("Ho ten user la bat buoc.");
+        }
+
+        if (fullName.Trim().Length < 2)
+        {
+            throw new InvalidOperationException("Ho ten user phai co it nhat 2 ky tu.");
+        }
+
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@') || !email.Contains('.'))
+        {
+            throw new InvalidOperationException("Email user khong hop le.");
+        }
+
+        if (!Enum.IsDefined(typeof(UserRole), role))
+        {
+            throw new InvalidOperationException("Role user khong hop le.");
+        }
+
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var duplicateEmail = _repository.Users.Any(item =>
+            item.TenantId == tenantId &&
+            item.Id != currentUserId &&
+            item.Email.Equals(normalizedEmail, StringComparison.OrdinalIgnoreCase));
+
+        if (duplicateEmail)
+        {
+            throw new InvalidOperationException("Email user da ton tai trong tenant.");
+        }
+
+        if (warehouseId.HasValue && !_repository.Warehouses.Any(item => item.TenantId == tenantId && item.Id == warehouseId.Value && item.IsActive))
+        {
+            throw new InvalidOperationException("Kho gan cho user khong ton tai hoac da bi khoa.");
+        }
+    }
+
+    private void EnsureTenantAdminRemains(AppUser user, UserRole newRole, bool newIsActive)
+    {
+        var removesActiveTenantAdmin = user.Role == UserRole.TenantAdmin &&
+            user.IsActive &&
+            (newRole != UserRole.TenantAdmin || !newIsActive);
+
+        if (!removesActiveTenantAdmin)
+        {
+            return;
+        }
+
+        var activeAdminCount = _repository.Users.Count(item =>
+            item.TenantId == user.TenantId &&
+            item.Id != user.Id &&
+            item.Role == UserRole.TenantAdmin &&
+            item.IsActive);
+
+        if (activeAdminCount == 0)
+        {
+            throw new InvalidOperationException("Tenant phai con it nhat mot TenantAdmin dang hoat dong.");
+        }
+    }
+
+    private static string NormalizeLocale(string locale)
+    {
+        var value = string.IsNullOrWhiteSpace(locale) ? "vi" : locale.Trim().ToLowerInvariant();
+        return value.Length > 8 ? value[..8] : value;
     }
 
     private Order FindOrder(Guid orderId)

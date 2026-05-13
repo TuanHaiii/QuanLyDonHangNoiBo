@@ -22,9 +22,45 @@ public sealed class OmsController : ControllerBase
     }
 
     [HttpGet("users")]
-    public ActionResult<IReadOnlyList<UserDto>> GetUsers([FromQuery] Guid? tenantId)
+    public ActionResult<IReadOnlyList<UserDto>> GetUsers([FromQuery] UserQuery query)
     {
-        return Execute(() => _service.GetUsers(tenantId));
+        return Execute(() => _service.GetUsers(query));
+    }
+
+    [HttpGet("users/{userId:guid}")]
+    public ActionResult<UserDto> GetUser(Guid userId)
+    {
+        return Execute(() => _service.GetUser(userId));
+    }
+
+    [HttpPost("users")]
+    public ActionResult<UserDto> CreateUser(CreateUserRequest request)
+    {
+        return Execute(() => _service.CreateUser(request));
+    }
+
+    [HttpPut("users/{userId:guid}")]
+    public ActionResult<UserDto> UpdateUser(Guid userId, UpdateUserRequest request)
+    {
+        return Execute(() => _service.UpdateUser(userId, request));
+    }
+
+    [HttpPost("users/{userId:guid}/activate")]
+    public ActionResult<UserDto> ActivateUser(Guid userId, UserActionRequest? request)
+    {
+        return Execute(() => _service.SetUserActive(userId, true, request?.UserId));
+    }
+
+    [HttpPost("users/{userId:guid}/deactivate")]
+    public ActionResult<UserDto> DeactivateUser(Guid userId, UserActionRequest? request)
+    {
+        return Execute(() => _service.SetUserActive(userId, false, request?.UserId));
+    }
+
+    [HttpDelete("users/{userId:guid}")]
+    public IActionResult DeleteUser(Guid userId, [FromQuery] Guid? deletedByUserId)
+    {
+        return Execute(() => _service.DeleteUser(userId, deletedByUserId));
     }
 
     [HttpGet("customers")]
@@ -153,6 +189,23 @@ public sealed class OmsController : ControllerBase
         try
         {
             return Ok(action());
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    private IActionResult Execute(Action action)
+    {
+        try
+        {
+            action();
+            return NoContent();
         }
         catch (KeyNotFoundException ex)
         {
