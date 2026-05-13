@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="QuanLyDonHangNoiBo.Api/QuanLyDonHangNoiBo.Api.csproj" />
+  <Project Path="QuanLyDonHangNoiBo.Application/QuanLyDonHangNoiBo.Application.csproj" />
+  <Project Path="QuanLyDonHangNoiBo.Domain/QuanLyDonHangNoiBo.Domain.csproj" />
+  <Project Path="QuanLyDonHangNoiBo.Infrastructure/QuanLyDonHangNoiBo.Infrastructure.csproj" />
+</Solution>

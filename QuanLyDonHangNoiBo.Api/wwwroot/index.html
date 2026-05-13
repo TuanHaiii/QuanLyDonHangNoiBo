@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OMS Noi Bo</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">OMS</div>
+        <div>
+          <strong>Quan ly don hang</strong>
+          <span id="tenantName">Demo</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Main navigation">
+        <button class="nav-item is-active" data-view="dashboard" data-i18n="nav.dashboard"></button>
+        <button class="nav-item" data-view="orders" data-i18n="nav.orders"></button>
+        <button class="nav-item" data-view="inventory" data-i18n="nav.inventory"></button>
+        <button class="nav-item" data-view="delivery" data-i18n="nav.delivery"></button>
+        <button class="nav-item" data-view="finance" data-i18n="nav.finance"></button>
+        <button class="nav-item" data-view="catalog" data-i18n="nav.catalog"></button>
+        <button class="nav-item" data-view="ai" data-i18n="nav.ai"></button>
+        <button class="nav-item" data-view="settings" data-i18n="nav.settings"></button>
+      </nav>
+      <div class="sidebar-footer">
+        <label class="field-label" for="localeSelect" data-i18n="settings.language"></label>
+        <select id="localeSelect" class="select">
+          <option value="vi">Tieng Viet</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="viewTitle"></h1>
+          <p id="viewSubtitle"></p>
+        </div>
+        <div class="topbar-actions">
+          <div class="user-chip">
+            <span id="userName">Admin</span>
+            <small id="userRole">TenantAdmin</small>
+          </div>
+          <button id="refreshButton" class="button button-secondary" data-i18n="common.refresh"></button>
+        </div>
+      </header>
+
+      <section id="app" class="content" aria-live="polite">
+        <div class="loader"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
